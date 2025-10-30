@@ -1,1 +1,292 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define HASH_SIZE 101
+
+typedef struct Sala {
+    char nome[100];
+    const char *pista;
+    struct Sala *esq;
+    struct Sala *dir;
+} Sala;
+
+typedef struct PistaNode {
+    char *pista;
+    struct PistaNode *esq;
+    struct PistaNode *dir;
+} PistaNode;
+
+typedef struct HashEntry {
+    char *chave;         // pista
+    char *suspeito;      // nome do suspeito
+    struct HashEntry *prox;
+} HashEntry;
+
+typedef struct HashTable {
+    HashEntry *tabela[HASH_SIZE];
+} HashTable;
+
+unsigned long hash_str(const char *str) {
+    unsigned long hash = 5381;
+    int c;
+    while ((c = (unsigned char)*str++))
+        hash = ((hash << 5) + hash) + c;
+    return hash % HASH_SIZE;
+}
+
+char *strdup_safe(const char *s) {
+    if (!s) return NULL;
+    size_t n = strlen(s) + 1;
+    char *p = malloc(n);
+    if (!p) { fprintf(stderr, "Erro de memória\n"); exit(EXIT_FAILURE); }
+    memcpy(p, s, n);
+    return p;
+}
+
+Sala *criarSala(const char *nome, const char *pista) {
+    Sala *s = malloc(sizeof(Sala));
+    if (!s) { fprintf(stderr, "Erro de memória\n"); exit(EXIT_FAILURE); }
+    strncpy(s->nome, nome, sizeof(s->nome)-1);
+    s->nome[sizeof(s->nome)-1] = '\0';
+    s->pista = pista;
+    s->esq = s->dir = NULL;
+    return s;
+}
+
+void inserirNaHash(HashTable *h, const char *pista, const char *suspeito) {
+    if (!pista || !suspeito) return;
+    unsigned long idx = hash_str(pista);
+    HashEntry *cur = h->tabela[idx];
+    while (cur) {
+        if (strcmp(cur->chave, pista) == 0) {
+            free(cur->suspeito);
+            cur->suspeito = strdup_safe(suspeito);
+            return;
+        }
+        cur = cur->prox;
+    }
+    HashEntry *e = malloc(sizeof(HashEntry));
+    if (!e) { fprintf(stderr, "Erro de memória\n"); exit(EXIT_FAILURE); }
+    e->chave = strdup_safe(pista);
+    e->suspeito = strdup_safe(suspeito);
+    e->prox = h->tabela[idx];
+    h->tabela[idx] = e;
+}
+
+const char *encontrarSuspeito(HashTable *h, const char *pista) {
+    if (!pista) return NULL;
+    unsigned long idx = hash_str(pista);
+    HashEntry *cur = h->tabela[idx];
+    while (cur) {
+        if (strcmp(cur->chave, pista) == 0) return cur->suspeito;
+        cur = cur->prox;
+    }
+    return NULL;
+}
+
+void liberarHash(HashTable *h) {
+    for (int i = 0; i < HASH_SIZE; ++i) {
+        HashEntry *cur = h->tabela[i];
+        while (cur) {
+            HashEntry *next = cur->prox;
+            free(cur->chave);
+            free(cur->suspeito);
+            free(cur);
+            cur = next;
+        }
+        h->tabela[i] = NULL;
+    }
+}
+
+int pesquisarPista(PistaNode *raiz, const char *pista) {
+    if (!raiz) return 0;
+    int cmp = strcmp(pista, raiz->pista);
+    if (cmp == 0) return 1;
+    if (cmp < 0) return pesquisarPista(raiz->esq, pista);
+    return pesquisarPista(raiz->dir, pista);
+}
+
+void inserirPista(PistaNode **raiz, const char *pista) {
+    if (!pista || pista[0] == '\0') return;
+    if (*raiz == NULL) {
+        PistaNode *n = malloc(sizeof(PistaNode));
+        if (!n) { fprintf(stderr, "Erro de memória\n"); exit(EXIT_FAILURE); }
+        n->pista = strdup_safe(pista);
+        n->esq = n->dir = NULL;
+        *raiz = n;
+        return;
+    }
+    int cmp = strcmp(pista, (*raiz)->pista);
+    if (cmp == 0) return;
+    if (cmp < 0) inserirPista(&(*raiz)->esq, pista);
+    else inserirPista(&(*raiz)->dir, pista);
+}
+
+void exibirPistas(PistaNode *raiz) {
+    if (!raiz) return;
+    exibirPistas(raiz->esq);
+    printf("  - %s\n", raiz->pista);
+    exibirPistas(raiz->dir);
+}
+
+void liberarPistas(PistaNode *raiz) {
+    if (!raiz) return;
+    liberarPistas(raiz->esq);
+    liberarPistas(raiz->dir);
+    free(raiz->pista);
+    free(raiz);
+}
+
+void liberarSalas(Sala *s) {
+    if (!s) return;
+    liberarSalas(s->esq);
+    liberarSalas(s->dir);
+    free(s);
+}
+
+void explorarSalas(Sala *inicio, PistaNode **arvorePistas, HashTable *hash) {
+    Sala *atual = inicio;
+    char entrada[120];
+    printf("\nVocê começa sua investigação no(a) %s.\n", atual->nome);
+    while (1) {
+        printf("\nLocal atual: %s\n", atual->nome);
+        if (atual->pista && atual->pista[0] != '\0') {
+            printf("Você encontrou uma pista: \"%s\"\n", atual->pista);
+            if (!pesquisarPista(*arvorePistas, atual->pista)) {
+                inserirPista(arvorePistas, atual->pista);
+                const char *s = encontrarSuspeito(hash, atual->pista);
+                if (s) {
+                    printf("Essa pista está ligada ao(a) suspeito(a): %s\n", s);
+                } else {
+                    printf("Essa pista ainda não foi relacionada a nenhum suspeito.\n");
+                }
+            } else {
+                printf("Você já coletou essa pista antes.\n");
+            }
+        } else {
+            printf("Nada de novo aqui.\n");
+        }
+
+        printf("Escolha o próximo passo: (e) esquerda   (d) direita   (s) sair\n");
+        printf("Escolha: ");
+        if (!fgets(entrada, sizeof(entrada), stdin)) {
+            printf("Entrada inválida. Encerrando exploração.\n");
+            break;
+        }
+        char opc = '\0';
+        for (size_t i = 0; i < strlen(entrada); ++i) {
+            if (!isspace((unsigned char)entrada[i])) { opc = tolower((unsigned char)entrada[i]); break; }
+        }
+        if (opc == 's') {
+            printf("Você decide encerrar a busca pelos cômodos.\n");
+            break;
+        } else if (opc == 'e') {
+            if (atual->esq) {
+                atual = atual->esq;
+                printf("Indo para a esquerda...\n");
+            } else {
+                printf("Não há caminho à esquerda a partir daqui.\n");
+            }
+        } else if (opc == 'd') {
+            if (atual->dir) {
+                atual = atual->dir;
+                printf("Indo para a direita...\n");
+            } else {
+                printf("Não há caminho à direita a partir daqui.\n");
+            }
+        } else {
+            printf("Opção desconhecida. Use 'e', 'd' ou 's'.\n");
+        }
+    }
+}
+
+int verificarSuspeitoFinal(PistaNode *raiz, HashTable *hash, const char *acusado) {
+    if (!raiz) return 0;
+    int contador = 0;
+    const char *suspeito = encontrarSuspeito(hash, raiz->pista);
+    if (suspeito && strcmp(suspeito, acusado) == 0) contador++;
+    contador += verificarSuspeitoFinal(raiz->esq, hash, acusado);
+    contador += verificarSuspeitoFinal(raiz->dir, hash, acusado);
+    return contador;
+}
+
+int main(void) {
+    HashTable hash = {0};
+    PistaNode *arvorePistas = NULL;
+
+    Sala *hall = criarSala("Hall de Entrada", "luva suja perto do tapete");
+    Sala *salaEstar = criarSala("Sala de Estar", "cigarro apagado no cinzeiro");
+    Sala *cozinha = criarSala("Cozinha", "pegadas molhadas próximas à pia");
+    Sala *biblioteca = criarSala("Biblioteca", "livro aberto sobre venenos");
+    Sala *escritorio = criarSala("Escritório", "caneta com impressões digitais");
+    Sala *quarto = criarSala("Quarto", "bilhete amassado com iniciais A.M.");
+    Sala *porao = criarSala("Porão", "ferramenta com resíduos de tinta");
+    Sala *jardim = criarSala("Jardim de Inverno", "sementes estranhas espalhadas");
+
+    hall->esq = salaEstar;
+    hall->dir = escritorio;
+
+    salaEstar->esq = cozinha;
+    salaEstar->dir = biblioteca;
+
+    cozinha->esq = quarto;
+    cozinha->dir = jardim;
+
+    escritorio->esq = porao;
+    escritorio->dir = NULL;
+
+    inserirNaHash(&hash, "luva suja perto do tapete", "Ana");
+    inserirNaHash(&hash, "cigarro apagado no cinzeiro", "Bruno");
+    inserirNaHash(&hash, "pegadas molhadas próximas à pia", "Carlos");
+    inserirNaHash(&hash, "livro aberto sobre venenos", "Ana");
+    inserirNaHash(&hash, "caneta com impressões digitais", "Bruno");
+    inserirNaHash(&hash, "bilhete amassado com iniciais A.M.", "Ana");
+    inserirNaHash(&hash, "ferramenta com resíduos de tinta", "Carlos");
+    inserirNaHash(&hash, "sementes estranhas espalhadas", "Diana");
+
+    printf("=== Detective Quest: Jogo de Acusação ===\n");
+    printf("Explore a mansão, colete pistas e tente descobrir o culpado.\n");
+    explorarSalas(hall, &arvorePistas, &hash);
+
+    printf("\nResumo das pistas coletadas:\n");
+    if (!arvorePistas) {
+        printf("  Você não coletou nenhuma pista.\n");
+    } else {
+        exibirPistas(arvorePistas);
+    }
+
+    if (!arvorePistas) {
+        printf("\nSem pistas não há julgamento possível. Fim da partida.\n");
+    } else {
+        char acusado[100];
+        printf("\nAgora faça a sua acusação. Digite o nome do suspeito: ");
+        if (!fgets(acusado, sizeof(acusado), stdin)) {
+            printf("Entrada inválida. Encerrando.\n");
+        } else {
+            size_t L = strlen(acusado);
+            if (L && acusado[L-1] == '\n') acusado[L-1] = '\0';
+            for (size_t i = 0; i < strlen(acusado); ++i) acusado[i] = isspace((unsigned char)acusado[i]) ? acusado[i] : acusado[i];
+            if (strlen(acusado) == 0) {
+                printf("Nome vazio. Acusação inválida.\n");
+            } else {
+                int votos = verificarSuspeitoFinal(arvorePistas, &hash, acusado);
+                printf("\nPistas que apontam para %s: %d\n", acusado, votos);
+                if (votos >= 2) {
+                    printf("Resultado: Há evidências suficientes. A acusação contra %s é plausível.\n", acusado);
+                } else {
+                    printf("Resultado: Evidências insuficientes para sustentar a acusação contra %s.\n", acusado);
+                }
+            }
+        }
+    }
+
+    liberarPistas(arvorePistas);
+    liberarHash(&hash);
+    liberarSalas(hall);
+
+    printf("\nObrigado por jogar. Até a próxima investigação!\n");
+    return 0;
+}
 
