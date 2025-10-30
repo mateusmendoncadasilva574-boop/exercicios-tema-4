@@ -1,1 +1,166 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+typedef struct Sala {
+    char nome[100];
+    char *pista;
+    struct Sala *esq;
+    struct Sala *dir;
+} Sala;
+
+typedef struct PistaNode {
+    char *pista;
+    struct PistaNode *esq;
+    struct PistaNode *dir;
+} PistaNode;
+
+char *strdup_safe(const char *s) {
+    if (!s) return NULL;
+    size_t n = strlen(s) + 1;
+    char *p = malloc(n);
+    if (!p) {
+        fprintf(stderr, "Erro de memória\n");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(p, s, n);
+    return p;
+}
+
+Sala *criarSala(const char *nome, const char *pista) {
+    Sala *s = malloc(sizeof(Sala));
+    if (!s) {
+        fprintf(stderr, "Erro de memória\n");
+        exit(EXIT_FAILURE);
+    }
+    strncpy(s->nome, nome, sizeof(s->nome) - 1);
+    s->nome[sizeof(s->nome) - 1] = '\0';
+    s->pista = pista ? strdup_safe(pista) : NULL;
+    s->esq = s->dir = NULL;
+    return s;
+}
+
+void inserirPista(PistaNode **raiz, const char *pista) {
+    if (!pista || pista[0] == '\0') return;
+    if (*raiz == NULL) {
+        PistaNode *n = malloc(sizeof(PistaNode));
+        if (!n) {
+            fprintf(stderr, "Erro de memória\n");
+            exit(EXIT_FAILURE);
+        }
+        n->pista = strdup_safe(pista);
+        n->esq = n->dir = NULL;
+        *raiz = n;
+        return;
+    }
+    int cmp = strcmp(pista, (*raiz)->pista);
+    if (cmp == 0) return;
+    if (cmp < 0) inserirPista(&(*raiz)->esq, pista);
+    else inserirPista(&(*raiz)->dir, pista);
+}
+
+void exibirPistas(PistaNode *raiz) {
+    if (!raiz) return;
+    exibirPistas(raiz->esq);
+    printf("- %s\n", raiz->pista);
+    exibirPistas(raiz->dir);
+}
+
+void explorarSalasComPistas(Sala *inicio, PistaNode **arvorePistas) {
+    Sala *atual = inicio;
+    char entrada[100];
+    while (1) {
+        printf("\nVocê está em: %s\n", atual->nome);
+        if (atual->pista && atual->pista[0] != '\0') {
+            printf("Pista encontrada: \"%s\"\n", atual->pista);
+            inserirPista(arvorePistas, atual->pista);
+            free(atual->pista);
+            atual->pista = NULL;
+        } else {
+            printf("Nenhuma pista neste cômodo.\n");
+        }
+        printf("Escolha: (e) esquerda  (d) direita  (s) sair\n");
+        printf("Entrada: ");
+        if (!fgets(entrada, sizeof(entrada), stdin)) {
+            printf("\nEntrada inválida. Encerrando exploração.\n");
+            break;
+        }
+        char opc = '\0';
+        for (size_t i = 0; i < strlen(entrada); ++i) {
+            if (!isspace((unsigned char)entrada[i])) {
+                opc = tolower((unsigned char)entrada[i]);
+                break;
+            }
+        }
+        if (opc == 's') {
+            printf("Saindo da exploração.\n");
+            break;
+        } else if (opc == 'e') {
+            if (atual->esq) atual = atual->esq;
+            else printf("Não há sala à esquerda.\n");
+        } else if (opc == 'd') {
+            if (atual->dir) atual = atual->dir;
+            else printf("Não há sala à direita.\n");
+        } else {
+            printf("Opção inválida. Use 'e', 'd' ou 's'.\n");
+        }
+    }
+}
+
+void liberarPistas(PistaNode *raiz) {
+    if (!raiz) return;
+    liberarPistas(raiz->esq);
+    liberarPistas(raiz->dir);
+    free(raiz->pista);
+    free(raiz);
+}
+
+void liberarSalas(Sala *s) {
+    if (!s) return;
+    liberarSalas(s->esq);
+    liberarSalas(s->dir);
+    if (s->pista) free(s->pista);
+    free(s);
+}
+
+int main(void) {
+    PistaNode *arvorePistas = NULL;
+
+    Sala *hall = criarSala("Hall de Entrada", "Uma luva suja encontrada perto do tapete");
+    Sala *salaEstar = criarSala("Sala de Estar", "Cigarro apagado no cinzeiro");
+    Sala *cozinha = criarSala("Cozinha", "Pegadas molhadas próximas à pia");
+    Sala *biblioteca = criarSala("Biblioteca", "Um livro aberto na página sobre venenos");
+    Sala *escritorio = criarSala("Escritório", NULL);
+    Sala *quarto = criarSala("Quarto", "Um bilhete amassado com iniciais: A.M.");
+    Sala *porao = criarSala("Porão", "Ferramenta com resíduos de tinta");
+
+    hall->esq = salaEstar;
+    hall->dir = escritorio;
+
+    salaEstar->esq = cozinha;
+    salaEstar->dir = biblioteca;
+
+    cozinha->esq = quarto;
+    cozinha->dir = NULL;
+
+    escritorio->esq = porao;
+    escritorio->dir = NULL;
+
+    printf("=== Detective Quest: Coleta de Pistas ===\n");
+    printf("Exploração começa no Hall de Entrada.\n");
+    explorarSalasComPistas(hall, &arvorePistas);
+
+    printf("\n=== Pistas coletadas (ordem alfabética) ===\n");
+    if (arvorePistas == NULL) {
+        printf("Nenhuma pista coletada.\n");
+    } else {
+        exibirPistas(arvorePistas);
+    }
+
+    liberarPistas(arvorePistas);
+    liberarSalas(hall);
+
+    return 0;
+}
 
